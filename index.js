@@ -23,12 +23,11 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getField = exports.getTags = exports.kanjiAnywhere = exports.kanjiBeginning = exports.readingAnywhere = exports.readingBeginning = exports.idsToWords = exports.setup = void 0;
+exports.search = exports.setup = void 0;
 const fs_1 = require("fs");
 const classic_level_1 = require("classic-level");
-const level_read_stream_1 = require("level-read-stream");
 __exportStar(require("./interfaces"), exports);
-function setup(dbpath, filename = '', verbose = false, omitPartial = false) {
+function setup(dbpath, filename = '') {
     return __awaiter(this, void 0, void 0, function* () {
         const db = new classic_level_1.ClassicLevel(dbpath);
         try {
@@ -61,33 +60,8 @@ function setup(dbpath, filename = '', verbose = false, omitPartial = false) {
                     batch.push({ type: 'put', key: `raw/${key}`, value: raw[key] });
                 }
             }
-            {
-                // to JSONify
-                const keys = ['tags', 'dictRevisions'];
-                for (const key of keys) {
-                    batch.push({ type: 'put', key: `raw/${key}`, value: JSON.stringify(raw[key]) });
-                }
-            }
-            for (const [numWordsWritten, w] of raw.words.entries()) {
-                if (batch.length > maxBatches) {
-                    yield db.batch(batch);
-                    batch = [];
-                    if (verbose) {
-                        console.log(`${numWordsWritten} entries written`);
-                    }
-                }
-                batch.push({ type: 'put', key: `raw/words/${w.id}`, value: JSON.stringify(w) });
-                for (const key of ['kana', 'kanji']) {
-                    for (const k of w[key]) {
-                        batch.push({ type: 'put', key: `indexes/${key}/${k.text}-${w.id}`, value: w.id });
-                        if (!omitPartial) {
-                            for (const substr of allSubstrings(k.text)) {
-                                // collisions in key ok, since value will be same
-                                batch.push({ type: 'put', key: `indexes/partial-${key}/${substr}-${w.id}`, value: w.id });
-                            }
-                        }
-                    }
-                }
+            for (const kanjiChar of raw.characters) {
+                batch.push({ type: 'put', key: `raw/characters/${kanjiChar.literal}`, value: JSON.stringify(kanjiChar) });
             }
             if (batch.length) {
                 yield db.batch(batch);
@@ -101,102 +75,21 @@ function setup(dbpath, filename = '', verbose = false, omitPartial = false) {
     });
 }
 exports.setup = setup;
-function drainStream(stream) {
-    const ret = [];
-    return new Promise((resolve, reject) => {
-        stream.on('data', x => ret.push(x))
-            .on('error', e => reject(e))
-            .on('close', () => resolve(ret))
-            .on('end', () => resolve(ret));
-    });
-}
-function searchBeginning(db, prefix, key = 'kana', limit) {
+function search(db, kanji) {
     return __awaiter(this, void 0, void 0, function* () {
-        const gte = `indexes/${key}/${prefix}`;
-        const values = new level_read_stream_1.ValueStream(db, { gte, lt: gte + '\uFE0F', limit });
-        return idsToWords(db, yield drainStream(values));
+        return db.get(`raw/characters/${kanji}`).then((x) => JSON.parse(x));
     });
 }
-function searchAnywhere(db, text, key = 'kana', limit) {
-    return __awaiter(this, void 0, void 0, function* () {
-        const gte = `indexes/partial-${key}/${text}`;
-        const values = new level_read_stream_1.ValueStream(db, { gte, lt: gte + '\uFE0F', limit });
-        return idsToWords(db, yield drainStream(values));
-    });
-}
-function idsToWords(db, idxs) {
-    return Promise.all(idxs.map(i => db.get(`raw/words/${i}`).then((x) => JSON.parse(x))));
-}
-exports.idsToWords = idsToWords;
-function readingBeginning(db, prefix, limit = -1) {
-    return __awaiter(this, void 0, void 0, function* () {
-        return searchBeginning(db, prefix, 'kana', limit);
-    });
-}
-exports.readingBeginning = readingBeginning;
-function readingAnywhere(db, text, limit = -1) {
-    return __awaiter(this, void 0, void 0, function* () {
-        return searchAnywhere(db, text, 'kana', limit);
-    });
-}
-exports.readingAnywhere = readingAnywhere;
-function kanjiBeginning(db, prefix, limit = -1) {
-    return __awaiter(this, void 0, void 0, function* () {
-        return searchBeginning(db, prefix, 'kanji', limit);
-    });
-}
-exports.kanjiBeginning = kanjiBeginning;
-function kanjiAnywhere(db, text, limit = -1) {
-    return __awaiter(this, void 0, void 0, function* () {
-        return searchAnywhere(db, text, 'kanji', limit);
-    });
-}
-exports.kanjiAnywhere = kanjiAnywhere;
-function getTags(db) {
-    return __awaiter(this, void 0, void 0, function* () {
-        return db.get('raw/tags').then((x) => JSON.parse(x));
-    });
-}
-exports.getTags = getTags;
-function getField(db, key) {
-    return __awaiter(this, void 0, void 0, function* () {
-        return db.get(`raw/${key}`);
-    });
-}
-exports.getField = getField;
-function allSubstrings(s) {
-    const slen = s.length;
-    let ret = new Set();
-    for (let start = 0; start < slen; start++) {
-        for (let length = 1; length <= slen - start; length++) {
-            ret.add(s.substr(start, length));
-        }
-    }
-    return ret;
-}
+exports.search = search;
 if (module === require.main) {
     (function () {
         return __awaiter(this, void 0, void 0, function* () {
             // TODO: Download latest jmdict-eng JSON
             const DBNAME = 'test';
-            const { db, dictDate, version } = yield setup(DBNAME, 'jmdict-eng-3.5.0.json', true, false);
+            const { db, dictDate, version } = yield setup(DBNAME, 'kanjidic2-en-3.5.0.json');
             console.log({ dictDate, version });
-            const res = yield readingBeginning(db, 'いい'); // それ
-            const resPartial = yield readingAnywhere(db, 'いい');
-            console.log(`${res.length} exact found`);
-            console.log(`${resPartial.length} partial found`);
-            console.log(yield idsToWords(db, ['1571070']));
-            {
-                const LIMIT = 4;
-                const res = yield readingBeginning(db, 'いい', LIMIT);
-                console.log(`${res.length} found with limit ${LIMIT}`);
-            }
-            {
-                console.log(Object.keys(yield getTags(db)));
-            }
-            {
-                console.log(yield getField(db, "dictDate"));
-            }
+            const res = yield search(db, '食');
+            console.log(res);
         });
     })();
 }

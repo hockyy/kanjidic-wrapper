@@ -1,6 +1,6 @@
 {
-  "name": "jmdict-wrapper",
-  "version": "1.1.2",
+  "name": "kanjidic-wrapper",
+  "version": "1.0.0",
   "description": "",
   "main": "index.js",
   "scripts": {
