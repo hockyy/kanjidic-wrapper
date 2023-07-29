@@ -3,7 +3,6 @@ import {promises as pfs} from 'fs';
 import {Simplified} from './interfaces';
 import {ClassicLevel} from "classic-level";
 import {AbstractBatchOperation} from "abstract-level";
-import {ValueStream} from "level-read-stream";
 
 export * from './interfaces';
 type Db = ClassicLevel;
@@ -37,7 +36,6 @@ export async function setup(dbpath: string, filename = ''): Promise<SetupType> {
     }
     const raw: Simplified = JSON.parse(contents);
     try {
-        const maxBatches = 10000;
         let batch: AbstractBatchOperation<any, any, any>[] = [];
 
         {
